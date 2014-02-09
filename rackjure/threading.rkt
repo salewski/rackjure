@@ -31,11 +31,11 @@
 ;;   context of `op` for "the parens" -- for the cons or list -- of
 ;;   the expanded form. For example, instead of a template like:
 ;;
-;;       #'(e x e_1 ...)
+;;       #'(f x a ...)
 ;;
 ;;   it must be:
 ;;
-;;       (datum->syntax #'op (cons #'e #'(x e_1 ...))).
+;;       (datum->syntax #'op (cons #'f #'(x a ...)))
 ;;
 ;;   This correctly handles both cases, where `e` is a function
 ;;   binding (a "function call") and where it is a transformer binding
@@ -49,32 +49,54 @@
 ;;     the expander will handle it as usual. (An earlier version of
 ;;     this always injected an #%app, which prevented ~> and ~>>
 ;;     continuing to work with macros.)
+;;
+;; Rewritten yet again so that the implementation does not recursively
+;; expand into itself, which would not compose well with other macros.
+;; See: <http://dev.clojure.org/jira/browse/CLJ-1121>
 
 (define-syntax (~> stx)
   (syntax-parse stx
-    [(_ x)
-     #'x]
-    [(op x ((~literal quote) e))   ;want ((quote e) x), NOT (quote e x)
-     (datum->syntax #'op (list #'(quote e) #'x))] ;#'((quote e) x)
-    [(op x (e e_1 ...))
-     (datum->syntax #'op (cons #'e #'(x e_1 ...)))] ;#'(e x e_1 ...)
-    [(op x e)
-    #`(op x (e))]                       ;(~> x (e))
-    [(op x form form_1 ...)
-     #'(op (op x form) form_1 ...)]))   ;(~> (~> x form) form_1 ..)
+    [(op x . forms)
+     (quasisyntax/loc stx
+       #,(let loop ([x #'x]
+                    [forms #'forms])
+           (syntax-parse forms
+             ;; (~> x) => x
+             [() x]
+             ;; (~> x 's) => ((quote s) x) ...NOT (quote s x)
+             [(((~literal quote) e) . more)
+              (loop (datum->syntax #'op (list #'(quote e) x))
+                    #'more)]
+             ;; (~> x (f a ...)) => (f x a ...)
+             [((f a ...) . more)
+              (loop (datum->syntax #'op (cons #'f #`(#,x a ...)))
+                    #'more)]
+             ;; (~> x f) => (f x)
+             [(f . more)
+              (loop (datum->syntax #'op (list #'f x))
+                    #'more)])))]))
 
 (define-syntax (~>> stx)
   (syntax-parse stx
-    [(_ x)
-     #'x]
-    [(op x ((~literal quote) e))   ;want ((quote a) x), NOT (quote x a)
-     (datum->syntax #'op (list #'(quote e) #'x))] ;#'((quote e) x)
-    [(op x (e e_1 ...))
-     (datum->syntax #'op (cons #'e #'(e_1 ... x)))] ;#'(e e_1 ... x)
-    [(op x e)
-     #'(op x (e))]                      ;(~>> x (e)
-    [(op x form form_1 ...)
-     #'(op (op x form) form_1 ...)]))   ;(~>> (~>> x form) form_1 ...)
+    [(op x . forms)
+     (quasisyntax/loc stx
+       #,(let loop ([x #'x]
+                    [forms #'forms])
+           (syntax-parse forms
+             ;; (~>> x) => x
+             [() x]
+             ;; (~>> x 's) => ((quote s) x) ...NOT (quote s x)
+             [(((~literal quote) e) . more)
+              (loop (datum->syntax #'op (list #'(quote e) x))
+                    #'more)]
+             ;; (~>> x (f a ...)) => (f a ... x)
+             [((f a ...) . more)
+              (loop (datum->syntax #'op (cons #'f #`(a ... #,x)))
+                    #'more)]
+             ;; (~>> x f) => (f x)
+             [(f . more)
+              (loop (datum->syntax #'op (list #'f x))
+                    #'more)])))]))
 
 (module* test racket/base
   (require (submod ".."))
@@ -89,6 +111,8 @@
   (check-equal? (~>> 5 (+ 3) (/ 2) (- 1))
                 (/ 3 4))
   (check-equal? (~>> 1 add1)
+                2)
+  (check-equal? (~>> 1 + (~>> 1 +)) ;; see CLJ-1121
                 2)
   ;; Confirm expansion using default #%app
   (module plain racket/base
