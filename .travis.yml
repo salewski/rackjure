@@ -51,9 +51,8 @@ install:
 before_script:
 
 script:
-  - raco link rackjure
-  - cd rackjure
-  - raco make main.rkt
-  - raco test -x .
+  - cd ..   # Travis did a cd into the dir, cd back up
+  - raco pkg install --deps search-auto --link rackjure
+  - raco test -x -p rackjure
 
 after_script:
