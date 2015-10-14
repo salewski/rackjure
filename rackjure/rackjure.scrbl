@@ -23,7 +23,7 @@ Clojure conflict, prefer Racket.
 
 @hyperlink["https://github.com/greghendershott/rackjure" "Source"].
 
-@margin-note{This is tested on Racket versions 5.3.6 and newer.}
+@margin-note{This is tested on Racket versions 6.0 and newer.}
 
 @[table-of-contents]
 

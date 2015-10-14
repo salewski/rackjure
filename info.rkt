@@ -1,7 +1,7 @@
 #lang setup/infotab
 (define version "0.8")
 (define collection 'multi)
-(define deps '(["racket" "5.3.6"]
+(define deps '(["racket" "6.0"]
                "base"
                "rackunit-lib"
                ["threading" "1.1"]))
